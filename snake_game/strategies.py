@@ -11,18 +11,50 @@ from itertools import count
 
 from .models import Direction, GameSnapshot, Position, MinimaxState, SnakeView
 from .engine import AI_ID
+from time import perf_counter
+
 
 class SearchMetrics:
     def __init__(self):
         self.reset()
 
+    # def reset(self):
+    #     self.states_generated = 0
+    #     self.states_expanded = 0
+    #     self.start_time = perf_counter()
+    #     self.execution_time = 0.0
+    #     self.cost = 0
+    #     self.path_length = 0
+        
+
+    # def print_metrics(self):
+    #     self.execution_time = perf_counter() - self.start_time
+    #     self.path_length += 1
+        
+    #     print("States generated:", self.states_generated)
+    #     print("States expanded:", self.states_expanded)
+    #     print("Execution time:", self.execution_time, "seconds")
+    #     print("Path cost:", self.cost)
+    #     print("Path length:", self.path_length)
     def reset(self):
         self.states_generated = 0
         self.states_expanded = 0
+        # self.start_time = perf_counter()
+        self.execution_time = 0.0
+        self.cost = 0
+        self.path_length = 0
+        
 
     def print_metrics(self):
+        self.path_length += 1
+        
         print("States generated:", self.states_generated)
         print("States expanded:", self.states_expanded)
+        print("Execution time:", self.execution_time * 1000, "ms")
+        print("Path cost:", self.cost)
+        print("Path length:", self.path_length)
+
+    
 class MoveStrategy(ABC):
     """Base class for every automated snake movement method."""
 
@@ -101,6 +133,9 @@ class DFSStrategy(MoveStrategy):
     def choose_move(
         self, snapshot: GameSnapshot, snake_id: str, rng: Random
     ) -> Direction:
+        # helper statistik
+        start_time = perf_counter()
+
         legal = snapshot.legal_moves_for(snake_id)
         snake = snapshot.snake(snake_id)
         if not legal or not snapshot.apples:
@@ -129,8 +164,8 @@ class DFSStrategy(MoveStrategy):
         self.committed_apple = path[-1]
 
         # helper statistik
+        self.metrics.execution_time += perf_counter() - start_time
         self.metrics.print_metrics()
-
 
         return convert_next_path_to_legal_direction(next_path, head, legal)
 
@@ -298,12 +333,19 @@ class UCSStrategy(MoveStrategy):
 
 @register_strategy("GreedyBFS")
 class GreedyBFSStrategy(MoveStrategy):
+
+    def __init__(self):
+        super().__init__()
+        self.metrics = SearchMetrics()
+
     def choose_move(
         self, snapshot: GameSnapshot, snake_id: str, rng: Random
     ) -> Direction:
         legal = snapshot.legal_moves_for(snake_id)
         snake = snapshot.snake(snake_id)
-        
+
+        self.metrics.print_metrics()
+
         if not legal or not snapshot.apples:
             return snake.direction
         
@@ -334,6 +376,7 @@ class GreedyBFSStrategy(MoveStrategy):
             head, _ = current_state
 
             if head in apples:
+                self.metrics.print_metrics()
                 return first_move
 
             for direction in Direction:
@@ -372,6 +415,7 @@ class GreedyBFSStrategy(MoveStrategy):
                     )
 
         # return rng.choice(legal) # bisa coba pake fallback
+        self.metrics.print_metrics()
         return snake.direction if snake.direction in legal else legal[0] #fallback
             
 
@@ -384,6 +428,9 @@ class AStarStrategy(MoveStrategy):
     def choose_move(
         self, snapshot: GameSnapshot, snake_id: str, rng: Random
     ) -> Direction:
+        # helper statistik
+        start_time = perf_counter()
+
         legal = snapshot.legal_moves_for(snake_id)
         snake = snapshot.snake(snake_id)
         if not legal or not snapshot.apples:
@@ -401,8 +448,8 @@ class AStarStrategy(MoveStrategy):
         print(f"Pop: {next_path}")
 
         # helper statistik
+        self.metrics.execution_time += perf_counter() - start_time
         self.metrics.print_metrics()
-
 
         return convert_next_path_to_legal_direction(next_path, head, legal)
 
@@ -416,23 +463,24 @@ class AStarStrategy(MoveStrategy):
             for apple in apples
         )
 
-        queue = [(h_start, 0, start, [start])]
+        queue = [(h_start, 0, start, [start], 0)]
         visited = set()
         g_score = {}
 
         while queue:
-            f, cost, current, path = heapq.heappop(queue)
-            print(f"Current: {current}, f: {f}, g: {cost}, Path: {path}")
-            print(f"g_score: {g_score}")
+            f, cost, current, path, penalty = heapq.heappop(queue)
+            #print(f"Current: {current}, f: {f}, g: {cost}, Path: {path}")
+            #print(f"g_score: {g_score}")
             
             if current in visited:
                 continue
 
             visited.add(current)
-            print(f"Visited: {visited}")
+            #print(f"Visited: {visited}")
 
             if current in apples:
                 print(f"Found apple at {current}, path: {path}")
+                self.metrics.cost += 1 + penalty
                 return path
 
             # helper statistik
@@ -465,7 +513,7 @@ class AStarStrategy(MoveStrategy):
                     else:
                         g_score[next_move] = g
                         f = g + h
-                        heapq.heappush(queue, (f, g, next_move, path + [next_move]))
+                        heapq.heappush(queue, (f, g, next_move, path + [next_move], penalty_of_next_move))
 
         return None
 @register_strategy("IDA*")
@@ -478,6 +526,7 @@ class IDAStarStrategy(MoveStrategy):
     def choose_move(
         self, snapshot: GameSnapshot, snake_id: str, rng: Random
     ) -> Direction:
+        start_time = perf_counter()
 
         # helper statistik
         # self.metrics.reset()
@@ -503,6 +552,7 @@ class IDAStarStrategy(MoveStrategy):
         next_path = path[1]
 
         # helper statistik
+        self.metrics.execution_time += perf_counter() - start_time
         self.metrics.print_metrics()
         print(f"IDA* next position: {next_path}")
 
